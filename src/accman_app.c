@@ -4,6 +4,7 @@
 #include "tox_errors.h"
 #include "toxcore/tox.h"
 #include "toxencryptsave/toxencryptsave.h"
+#include "utils_passworddialog.h"
 
 struct _AccmanApp {
     GtkApplicationWindow parent_instance;
@@ -19,13 +20,11 @@ struct _AccmanApp {
 
 G_DEFINE_TYPE(AccmanApp, accman_app, GTK_TYPE_APPLICATION_WINDOW)
 
-// TODO: move multiple GTK_XXX(yyy) into distinct variable ?
-
 static void
-refresh(AccmanApp const *const self)
+refresh(AccmanApp *const self)
 {
     // remove all child
-    GtkWidget *child;
+    GtkWidget *child = NULL;
     GtkWidget *box = GTK_WIDGET(self->login_box);
     while ((child = gtk_widget_get_first_child(box)) != NULL) {
         gtk_box_remove(self->login_box, child);
@@ -57,7 +56,7 @@ refresh(AccmanApp const *const self)
         g_string_replace(stem, ".tox", "", 0);
         GtkWidget *button = gtk_button_new_with_label(stem->str);
         gtk_widget_set_size_request(button, -1, 50);
-        // TODO: connect signal clicked
+        g_signal_connect_swapped(button, "clicked", G_CALLBACK(login_dispatcher), self);
         gtk_box_append(self->login_box, button);
         g_string_free(stem, true);
     }
@@ -73,7 +72,77 @@ refresh(AccmanApp const *const self)
     }
 }
 
-// TODO: rw
+static void
+login(__attribute__((unused)) AccmanApp const *const self, char const *const filename,
+      char const *const password)
+{
+    printf("Login with:\n\tfilename: \"%s\"\n\tpassword: \"%s\"\n", filename, password);
+    fflush(stdout);
+}
+
+static void
+password_dialog_input_callback(UtilsPasswordDialog *const password_dialog, int response,
+                               char const *const password, char const *const filename)
+{
+    // no need to unref, gtk_window_close_request will be called internaly
+    if (response == GTK_RESPONSE_DELETE_EVENT) {
+        return;
+    }
+
+    // treat empty password as cancel
+    if (response == GTK_RESPONSE_ACCEPT && password != NULL) {
+        AccmanApp const *self = NULL;
+
+        g_object_get(password_dialog, "userdata", &self, NULL);
+
+        login(self, filename, password);
+    }
+
+    g_object_unref((gpointer)password_dialog);
+}
+
+static void
+login_dispatcher(AccmanApp *const self, GtkButton *const button)
+{
+    char const *const filename = get_tox_profile_path(gtk_button_get_label(button));
+
+    // check if file exists
+    if (!g_file_test(filename, G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
+        // File doesn't exist so let's refresh the list
+        refresh(self);
+        return;
+    }
+
+    // get file's content
+    uint8_t const *savedata = NULL;
+    size_t savedata_size = 0;
+    GError *error = NULL;
+
+    g_file_get_contents(filename, (char **)&savedata, &savedata_size, &error);
+    if (error != NULL) {
+        gtk_message_dialog_error(GTK_WINDOW(self), error->message);
+        g_error_free(error);
+        return;
+    }
+
+    // tox_is_data_encrypted needs at least tox_pass_encryption_extra_length otherwise UB
+    if (savedata_size < tox_pass_encryption_extra_length()) {
+        gtk_message_dialog_error(GTK_WINDOW(self), "Invalid profile.");
+        return;
+    }
+
+    // check if data is encrypted
+    if (tox_is_data_encrypted(savedata)) {
+        UtilsPasswordDialog *password_dialog = utils_password_dialog_new(GTK_WINDOW(self), self);
+        g_signal_connect(password_dialog, "input", G_CALLBACK(password_dialog_input_callback),
+                         (gpointer)filename);
+        return;
+    }
+
+    // profile is not encrypted
+    login(self, filename, NULL);
+}
+
 static void
 create_profile(AccmanApp const *const self)
 {

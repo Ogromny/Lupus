@@ -10,12 +10,14 @@ set(SOURCES
     src/gtk_helpers.c
     src/helpers.c
     src/tox_errors.c
+    src/utils_passworddialog.c
 )
 set(HEADERS
     include/accman_app.h
     include/gtk_helpers.h
     include/helpers.h
-    include/tox_errors.c
+    include/tox_errors.h
+    include/utils_passworddialog.h
 )
 set(COMPILE_FLAGS "-Wall -Wextra -Werror -g")
 
