@@ -55,3 +55,41 @@ tox_error_message_err_encryption(Tox_Err_Encryption err)
 
     return NULL;
 }
+
+char const *
+tox_error_message_err_decryption(Tox_Err_Decryption err)
+{
+    switch (err) {
+    case TOX_ERR_DECRYPTION_OK:
+        return NULL;
+    case TOX_ERR_DECRYPTION_NULL:
+        return ERR_NULL;
+    case TOX_ERR_DECRYPTION_INVALID_LENGTH:
+        return "The input data was shorter than TOX_PASS_ENCRYPTION_EXTRA_LENGTH bytes.";
+    case TOX_ERR_DECRYPTION_BAD_FORMAT:
+        return "The input data is missing the magic number (i.e. wasn't created by this module, or "
+               "is corrupted).";
+    case TOX_ERR_DECRYPTION_KEY_DERIVATION_FAILED:
+        return "The crypto lib was unable to derive a key from the given passphrase, which is "
+               "usually a lack of memory issue. The functions accepting keys do not produce this "
+               "error.";
+    case TOX_ERR_DECRYPTION_FAILED:
+        return "The encrypted byte array could not be decrypted. Either the data was corrupted or "
+               "the password/key was incorrect.";
+    }
+
+    return NULL;
+}
+
+char const *
+tox_error_message_err_options_new(Tox_Err_Options_New err)
+{
+    switch (err) {
+    case TOX_ERR_OPTIONS_NEW_OK:
+        return NULL;
+    case TOX_ERR_OPTIONS_NEW_MALLOC:
+        return "The function failed to allocate enough memory for the options struct.";
+    }
+
+    return NULL;
+}

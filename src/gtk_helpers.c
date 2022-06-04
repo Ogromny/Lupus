@@ -18,15 +18,13 @@ gtk_window_unfocus(GtkWindow *const window)
 void
 gtk_entry_clear(GtkEntry *const entry)
 {
-    GtkEntryBuffer *const buffer = gtk_entry_get_buffer(entry);
-    gtk_entry_buffer_delete_text(buffer, 0, -1);
+    gtk_editable_delete_text(GTK_EDITABLE(entry), 0, -1);
 }
 
 char const *
 gtk_entry_get_text(GtkEntry *const entry)
 {
-    GtkEntryBuffer *const buffer = gtk_entry_get_buffer(entry);
-    return gtk_entry_buffer_get_text(buffer);
+    return gtk_editable_get_text(GTK_EDITABLE(entry));
 }
 
 static void

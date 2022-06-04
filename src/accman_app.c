@@ -20,64 +20,74 @@ struct _AccmanApp {
 
 G_DEFINE_TYPE(AccmanApp, accman_app, GTK_TYPE_APPLICATION_WINDOW)
 
-static void
-refresh(AccmanApp *const self)
-{
-    // remove all child
-    GtkWidget *child = NULL;
-    GtkWidget *box = GTK_WIDGET(self->login_box);
-    while ((child = gtk_widget_get_first_child(box)) != NULL) {
-        gtk_box_remove(self->login_box, child);
-    }
+static void refresh(AccmanApp *const self);
 
-    // list all files
+static void
+login(AccmanApp const *const self, char const *const filename, char const *const password)
+{
+    // get file's content
+    // No need to check again if the size is at least tox_pass_encryption_extra_length(), or
+    // if the data is encrypted, login_dispatcher already checked all of that.
+    uint8_t *savedata = NULL;
+    size_t savedata_size = 0;
     GError *error = NULL;
-    GDir *const dir = g_dir_open(get_tox_config_dir(), 0, &error);
+
+    g_file_get_contents(filename, (char **)&savedata, &savedata_size, &error);
     if (error != NULL) {
         gtk_message_dialog_error(GTK_WINDOW(self), error->message);
         g_error_free(error);
+        return;
     }
 
-    char const *filename = NULL;
-    while ((filename = g_dir_read_name(dir)) != NULL) {
-        // filename = (stem + ext)
-        if (!g_str_has_suffix(filename, ".tox")) {
-            continue;
+    // decrypt data
+    if (password != NULL) {
+        size_t plain_size = savedata_size - tox_pass_encryption_extra_length();
+        uint8_t *const plain = g_malloc(plain_size);
+        Tox_Err_Decryption err = TOX_ERR_DECRYPTION_OK;
+
+        tox_pass_decrypt(savedata, savedata_size, (uint8_t const *)password, strlen(password),
+                         plain, &err);
+
+        if (err != TOX_ERR_DECRYPTION_OK) {
+            g_free(plain);
+            gtk_message_dialog_error(GTK_WINDOW(self), tox_error_message(err));
+            goto cleanup_1;
         }
 
-        // check if file is not a directory
-        char const *const filepath = get_tox_profile_path(filename);
-        if (!g_file_test(filepath, G_FILE_TEST_IS_REGULAR)) {
-            g_free((gpointer)filepath);
-        }
-
-        // create stem
-        GString *stem = g_string_new(filename);
-        g_string_replace(stem, ".tox", "", 0);
-        GtkWidget *button = gtk_button_new_with_label(stem->str);
-        gtk_widget_set_size_request(button, -1, 50);
-        g_signal_connect_swapped(button, "clicked", G_CALLBACK(login_dispatcher), self);
-        gtk_box_append(self->login_box, button);
-        g_string_free(stem, true);
+        g_free(savedata);
+        savedata = plain;
+        savedata_size = plain_size;
     }
-    g_dir_close(dir);
 
-    // no child
-    if (gtk_widget_get_first_child(box) == NULL) {
-        GtkLabel *label = GTK_LABEL(gtk_label_new("No profile yet !"));
-        gtk_widget_set_halign(GTK_WIDGET(label), GTK_ALIGN_CENTER);
-        gtk_widget_set_valign(GTK_WIDGET(label), GTK_ALIGN_CENTER);
-        gtk_widget_set_size_request(GTK_WIDGET(label), -1, 50);
-        gtk_box_append(self->login_box, GTK_WIDGET(label));
+    // create Tox_Options
+    Tox_Err_Options_New err = TOX_ERR_OPTIONS_NEW_OK;
+    struct Tox_Options *const options = tox_options_new(&err);
+
+    if (err != TOX_ERR_OPTIONS_NEW_OK) {
+        gtk_message_dialog_error(GTK_WINDOW(self), tox_error_message(err));
+        goto cleanup_1;
     }
-}
 
-static void
-login(__attribute__((unused)) AccmanApp const *const self, char const *const filename,
-      char const *const password)
-{
-    printf("Login with:\n\tfilename: \"%s\"\n\tpassword: \"%s\"\n", filename, password);
-    fflush(stdout);
+    // assign savedata tox Tox_Options
+    tox_options_set_savedata_type(options, TOX_SAVEDATA_TYPE_TOX_SAVE);
+    tox_options_set_savedata_data(options, savedata, savedata_size);
+
+    // create Tox's instance
+    Tox_Err_New err_new = TOX_ERR_NEW_OK;
+    struct Tox *const tox = tox_new(options, &err_new);
+
+    if (err_new != TOX_ERR_NEW_OK) {
+        gtk_message_dialog_error(GTK_WINDOW(self), tox_error_message(err_new));
+        goto cleanup_2;
+    }
+
+    gtk_message_dialog_info(GTK_WINDOW(self), "Tox instance is valid");
+    tox_kill(tox);
+
+cleanup_2:
+    tox_options_free(options);
+cleanup_1:
+    g_free(savedata);
 }
 
 static void
@@ -144,7 +154,59 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
 }
 
 static void
-create_profile(AccmanApp const *const self)
+refresh(AccmanApp *const self)
+{
+    // remove all child
+    GtkWidget *child = NULL;
+    GtkWidget *box = GTK_WIDGET(self->login_box);
+    while ((child = gtk_widget_get_first_child(box)) != NULL) {
+        gtk_box_remove(self->login_box, child);
+    }
+
+    // list all files
+    GError *error = NULL;
+    GDir *const dir = g_dir_open(get_tox_config_dir(), 0, &error);
+    if (error != NULL) {
+        gtk_message_dialog_error(GTK_WINDOW(self), error->message);
+        g_error_free(error);
+    }
+
+    char const *filename = NULL;
+    while ((filename = g_dir_read_name(dir)) != NULL) {
+        // filename = (stem + ext)
+        if (!g_str_has_suffix(filename, ".tox")) {
+            continue;
+        }
+
+        // check if file is not a directory
+        char const *const filepath = get_tox_profile_path(filename);
+        if (!g_file_test(filepath, G_FILE_TEST_IS_REGULAR)) {
+            g_free((gpointer)filepath);
+        }
+
+        // create stem
+        GString *stem = g_string_new(filename);
+        g_string_replace(stem, ".tox", "", 0);
+        GtkWidget *button = gtk_button_new_with_label(stem->str);
+        gtk_widget_set_size_request(button, -1, 50);
+        g_signal_connect_swapped(button, "clicked", G_CALLBACK(login_dispatcher), self);
+        gtk_box_append(self->login_box, button);
+        g_string_free(stem, true);
+    }
+    g_dir_close(dir);
+
+    // no child
+    if (gtk_widget_get_first_child(box) == NULL) {
+        GtkLabel *label = GTK_LABEL(gtk_label_new("No profile yet !"));
+        gtk_widget_set_halign(GTK_WIDGET(label), GTK_ALIGN_CENTER);
+        gtk_widget_set_valign(GTK_WIDGET(label), GTK_ALIGN_CENTER);
+        gtk_widget_set_size_request(GTK_WIDGET(label), -1, 50);
+        gtk_box_append(self->login_box, GTK_WIDGET(label));
+    }
+}
+
+static void
+create_profile(AccmanApp *const self)
 {
     // check username
     if (gtk_entry_get_text_length(self->username) == 0) {
@@ -205,7 +267,8 @@ create_profile(AccmanApp const *const self)
     // success !
     gtk_message_dialog_info(GTK_WINDOW(self), "Profile created successfully !");
 
-    // clean ui afterall
+    // refresh and clean ui afterall
+    refresh(self);
     gtk_stack_set_visible_child(self->stack, GTK_WIDGET(self->login_box));
     gtk_entry_clear(self->username);
     gtk_entry_clear(self->password);
