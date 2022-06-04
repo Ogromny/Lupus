@@ -120,7 +120,7 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
     if (!g_file_test(filename, G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
         // File doesn't exist so let's refresh the list
         refresh(self);
-        return;
+        goto cleanup;
     }
 
     // get file's content
@@ -132,13 +132,13 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
     if (error != NULL) {
         gtk_message_dialog_error(GTK_WINDOW(self), error->message);
         g_error_free(error);
-        return;
+        goto cleanup;
     }
 
     // tox_is_data_encrypted needs at least tox_pass_encryption_extra_length otherwise UB
     if (savedata_size < tox_pass_encryption_extra_length()) {
         gtk_message_dialog_error(GTK_WINDOW(self), "Invalid profile.");
-        return;
+        goto cleanup;
     }
 
     // check if data is encrypted
@@ -146,11 +146,14 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
         UtilsPasswordDialog *password_dialog = utils_password_dialog_new(GTK_WINDOW(self), self);
         g_signal_connect(password_dialog, "input", G_CALLBACK(password_dialog_input_callback),
                          (gpointer)filename);
-        return;
+        goto cleanup;
     }
 
     // profile is not encrypted
     login(self, filename, NULL);
+
+cleanup:
+    g_free((gpointer)filename);
 }
 
 static void
@@ -181,7 +184,7 @@ refresh(AccmanApp *const self)
         // check if file is not a directory
         char const *const filepath = get_tox_profile_path(filename);
         if (!g_file_test(filepath, G_FILE_TEST_IS_REGULAR)) {
-            g_free((gpointer)filepath);
+            goto cleanup;
         }
 
         // create stem
@@ -192,6 +195,9 @@ refresh(AccmanApp *const self)
         g_signal_connect_swapped(button, "clicked", G_CALLBACK(login_dispatcher), self);
         gtk_box_append(self->login_box, button);
         g_string_free(stem, true);
+
+    cleanup:
+        g_free((gpointer)filepath);
     }
     g_dir_close(dir);
 
