@@ -15,7 +15,7 @@ get_tox_config_dir(void)
     return dir;
 }
 
-char const *
+char *
 get_tox_profile_path(char const *const name)
 {
     if (g_str_has_suffix(name, ".tox")) {
@@ -23,7 +23,7 @@ get_tox_profile_path(char const *const name)
     }
 
     char *const filename = g_strconcat(name, ".tox", NULL);
-    char const *const path = g_build_filename(get_tox_config_dir(), filename, NULL);
+    char *const path = g_build_filename(get_tox_config_dir(), filename, NULL);
 
     g_free(filename);
 

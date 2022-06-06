@@ -92,11 +92,11 @@ cleanup_1:
 
 static void
 password_dialog_input_callback(UtilsPasswordDialog *const password_dialog, int response,
-                               char const *const password, char const *const filename)
+                               char const *const password, char *const filename)
 {
     // no need to unref, gtk_window_close_request will be called internaly
     if (response == GTK_RESPONSE_DELETE_EVENT) {
-        return;
+        goto cleanup;
     }
 
     // treat empty password as cancel
@@ -109,22 +109,37 @@ password_dialog_input_callback(UtilsPasswordDialog *const password_dialog, int r
     }
 
     g_object_unref((gpointer)password_dialog);
+cleanup:
+    g_free(filename);
 }
 
 static void
 login_dispatcher(AccmanApp *const self, GtkButton *const button)
 {
-    char const *const filename = get_tox_profile_path(gtk_button_get_label(button));
+    // I can't really use goto for error cleaning, cause I need to keep filename
+    // alive for `login` and `password_dialog_input_callback`. In fact I can use goto
+    // but it will end up with something like that:
+    // ```c
+    // cleanup_3:
+    //      g_free(savedata);
+    //      return; // preserve from freeing filename
+    // cleanup_2:
+    //      g_free(savedata);
+    // cleanup_1:
+    //      g_free(filename);
+    // ```
+    char *const filename = get_tox_profile_path(gtk_button_get_label(button));
 
     // check if file exists
     if (!g_file_test(filename, G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
         // File doesn't exist so let's refresh the list
         refresh(self);
-        goto cleanup;
+        g_free(filename);
+        return;
     }
 
     // get file's content
-    uint8_t const *savedata = NULL;
+    uint8_t *savedata = NULL;
     size_t savedata_size = 0;
     GError *error = NULL;
 
@@ -132,13 +147,15 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
     if (error != NULL) {
         gtk_message_dialog_error(GTK_WINDOW(self), error->message);
         g_error_free(error);
-        goto cleanup;
+        g_free(filename);
+        return;
     }
 
     // tox_is_data_encrypted needs at least tox_pass_encryption_extra_length otherwise UB
     if (savedata_size < tox_pass_encryption_extra_length()) {
         gtk_message_dialog_error(GTK_WINDOW(self), "Invalid profile.");
-        goto cleanup;
+        g_free(savedata);
+        g_free(filename);
     }
 
     // check if data is encrypted
@@ -146,14 +163,13 @@ login_dispatcher(AccmanApp *const self, GtkButton *const button)
         UtilsPasswordDialog *password_dialog = utils_password_dialog_new(GTK_WINDOW(self), self);
         g_signal_connect(password_dialog, "input", G_CALLBACK(password_dialog_input_callback),
                          (gpointer)filename);
-        goto cleanup;
+        g_free(savedata);
+        return;
     }
 
     // profile is not encrypted
+    g_free(savedata);
     login(self, filename, NULL);
-
-cleanup:
-    g_free((gpointer)filename);
 }
 
 static void

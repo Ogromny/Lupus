@@ -1,0 +1,33 @@
+# see https://gitlab.gnome.org/GNOME/gtk/-/issues/4892
+{
+    gtk_init
+    Memcheck:Leak
+    fun:malloc
+    fun:g_malloc
+    ...
+    fun:gtk_init_check
+    fun:gtk_init
+}
+{
+   clone_downto_gdk_pixbuf_new_from_stream
+   Memcheck:Leak
+   fun:malloc
+   ...
+   fun:rsvg_handle_close
+   ...
+   fun:gdk_pixbuf_new_from_stream
+   ...
+   fun:start_thread
+   fun:clone
+}
+{
+    gdk_display_init_egl
+    Memcheck:Leak
+    fun:calloc
+    ...
+    fun:gdk_display_init_egl
+    fun:gdk_wayland_display_init_gl
+    ...
+    fun:g_application_run
+    fun:main
+}
